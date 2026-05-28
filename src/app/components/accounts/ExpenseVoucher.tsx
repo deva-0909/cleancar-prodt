@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
-import { Receipt, Save } from "lucide-react";
-import { accountingEntryService, calculateGST, TDS_RATE_CHART, type ItemMaster, type LedgerMaster } from "../../services/accountingEntryService";
+import { Receipt, Save, Plus } from "lucide-react";
+import { accountingEntryService, TDS_RATE_CHART, type ItemMaster, type LedgerMaster } from "../../services/accountingEntryService";
 import { gstComplianceService, COMPANY_GST_CONFIG } from "../../services/gstComplianceService";
 import { useCity } from "../../contexts/CityContext";
 import { useRole } from "../../contexts/RoleContext";
@@ -8,12 +8,21 @@ import { toast } from "sonner";
 
 type PaymentMode = "Cash" | "Bank" | "Credit (Partial)" | "Credit (Full)";
 
+// ── FIX 1: inline item creation state ────────────────────────────────────────
+interface NewItemForm {
+  itemName: string;
+  hsnCode: string;
+  defaultGSTRate: 0 | 5 | 12 | 18 | 28 | 40;
+  unitOfMeasure: string;
+  description: string;
+}
+
 export function ExpenseVoucher() {
   const { city, cityId } = useCity();
   const { currentUser } = useRole();
 
   const [formData, setFormData] = useState({
-    date: new Date().toISOString().split('T')[0],
+    date: new Date().toISOString().split("T")[0],
     vendorId: "",
     itemId: "",
     hsnCode: "",
@@ -29,6 +38,7 @@ export function ExpenseVoucher() {
     grandTotal: 0,
     tdsSection: "",
     tdsAmount: 0,
+    // FIX 4: all four payment modes available
     paymentMode: "Cash" as PaymentMode,
     amountPaidNow: 0,
     creditorLedgerId: "",
@@ -43,33 +53,56 @@ export function ExpenseVoucher() {
   const [selectedVendor, setSelectedVendor] = useState<LedgerMaster | null>(null);
   const [selectedItem, setSelectedItem] = useState<ItemMaster | null>(null);
 
+  // FIX 7: inline item creation
+  const [showCreateItem, setShowCreateItem] = useState(false);
+  const [newItemForm, setNewItemForm] = useState<NewItemForm>({
+    itemName: "",
+    hsnCode: "",
+    defaultGSTRate: 18,
+    unitOfMeasure: "Nos",
+    description: "",
+  });
+
   useEffect(() => {
     const allLedgers = accountingEntryService.getLedgers(cityId);
-    setVendors(allLedgers.filter(l => 
-      l.accountHead === "accounts_payable" || 
-      l.accountHead === "other_liabilities" ||
-      l.type === "vendor"
-    ));
-    setExpenseLedgers(allLedgers.filter(l => {
-      const isExpense = l.nature === "expense";
-      return isExpense;
-    }));
-    setCreditors(allLedgers.filter(l => l.accountHead === "accounts_payable" || l.accountHead === "other_liabilities" || l.accountHead === "credit_cards"));
+
+    // FIX 6: vendor dropdown shows vendor NAME — filter out generic system "Accounts Payable" ledger
+    setVendors(
+      allLedgers.filter(
+        (l) =>
+          (l.accountHead === "accounts_payable" || l.type === "vendor") &&
+          !l.isSystem // exclude the generic system "Accounts Payable" default ledger
+      )
+    );
+
+    // FIX 3 + FIX 5: expense ledger shows l.name (e.g. "Professional Fees")
+    setExpenseLedgers(allLedgers.filter((l) => l.nature === "expense"));
+
+    setCreditors(
+      allLedgers.filter(
+        (l) =>
+          l.accountHead === "accounts_payable" ||
+          l.accountHead === "other_liabilities" ||
+          l.accountHead === "credit_cards"
+      )
+    );
     setItems(accountingEntryService.getItems());
   }, [cityId]);
 
   useEffect(() => {
     if (formData.quantity && formData.unitPrice) {
-      const totalAmount = formData.quantity * formData.unitPrice;
-      setFormData(prev => ({ ...prev, totalAmount }));
+      setFormData((prev) => ({ ...prev, totalAmount: prev.quantity * prev.unitPrice }));
     }
   }, [formData.quantity, formData.unitPrice]);
 
   useEffect(() => {
     if (formData.totalAmount && formData.gstRate !== undefined && formData.supplyType) {
-      const supplyType = formData.supplyType as "INTRA_STATE" | "INTER_STATE" | "EXPORT" | "RCM_INTRA" | "RCM_INTER";
-      const gst = gstComplianceService.calculateGST(formData.totalAmount, formData.gstRate, supplyType);
-      setFormData(prev => ({
+      const gst = gstComplianceService.calculateGST(
+        formData.totalAmount,
+        formData.gstRate,
+        formData.supplyType as "INTRA_STATE" | "INTER_STATE" | "EXPORT" | "RCM_INTRA" | "RCM_INTER"
+      );
+      setFormData((prev) => ({
         ...prev,
         cgst: gst.cgst,
         sgst: gst.sgst,
@@ -80,44 +113,52 @@ export function ExpenseVoucher() {
   }, [formData.totalAmount, formData.gstRate, formData.supplyType]);
 
   useEffect(() => {
-    // Auto-calculate TDS
+    // FIX 1: TDS rate uses rateIndividual for Individual/HUF, rateCompany for others
     if (formData.tdsSection && formData.totalAmount) {
-      const tdsConfig = TDS_RATE_CHART.find(t => t.section === formData.tdsSection);
+      const tdsConfig = TDS_RATE_CHART.find((t) => t.section === formData.tdsSection);
       if (tdsConfig) {
-        const tdsAmount = Math.round(formData.totalAmount * tdsConfig.rateCompany) / 100;
-        setFormData(prev => ({ ...prev, tdsAmount }));
+        const isIndividualOrHUF = ["Individual", "HUF"].includes(
+          (selectedVendor as any)?.legalEntityType || ""
+        );
+        const tdsRate = isIndividualOrHUF ? tdsConfig.rateIndividual : tdsConfig.rateCompany;
+        const tdsAmount = Math.round(formData.totalAmount * tdsRate) / 100;
+        setFormData((prev) => ({ ...prev, tdsAmount }));
       }
     } else {
-      setFormData(prev => ({ ...prev, tdsAmount: 0 }));
+      setFormData((prev) => ({ ...prev, tdsAmount: 0 }));
     }
-  }, [formData.tdsSection, formData.totalAmount]);
+  }, [formData.tdsSection, formData.totalAmount, selectedVendor]);
 
   useEffect(() => {
     if (formData.paymentMode === "Cash" || formData.paymentMode === "Bank") {
-      setFormData(prev => ({ ...prev, amountPaidNow: prev.grandTotal }));
+      setFormData((prev) => ({ ...prev, amountPaidNow: prev.grandTotal }));
     }
   }, [formData.paymentMode, formData.grandTotal]);
 
   const handleVendorChange = (vendorId: string) => {
-    const vendor = vendors.find(v => v.id === vendorId);
+    const vendor = vendors.find((v) => v.id === vendorId);
     if (vendor) {
       setSelectedVendor(vendor);
-      // Derive supply type from vendor's state vs company state
-      // For simplicity, if vendor has gstin, extract state code
       let vendorStateCode = COMPANY_GST_CONFIG.stateCode;
       if (vendor.gstin && vendor.gstin.length >= 2) {
         vendorStateCode = vendor.gstin.substring(0, 2);
       }
-      const supplyType = vendorStateCode === COMPANY_GST_CONFIG.stateCode ? "INTRA_STATE" : "INTER_STATE";
-      setFormData(prev => ({ ...prev, vendorId, supplyType }));
+      const supplyType =
+        vendorStateCode === COMPANY_GST_CONFIG.stateCode ? "INTRA_STATE" : "INTER_STATE";
+      setFormData((prev) => ({ ...prev, vendorId, supplyType }));
     }
   };
 
   const handleItemChange = (itemId: string) => {
-    const item = items.find(i => i.id === itemId);
+    // FIX 7: handle inline create trigger
+    if (itemId === "__create_new__") {
+      setShowCreateItem(true);
+      return;
+    }
+    const item = items.find((i) => i.id === itemId);
     if (item) {
       setSelectedItem(item);
-      setFormData(prev => ({
+      setFormData((prev) => ({
         ...prev,
         itemId,
         hsnCode: item.hsnCode,
@@ -125,6 +166,38 @@ export function ExpenseVoucher() {
         gstRate: item.defaultGSTRate,
       }));
     }
+  };
+
+  // FIX 7: save inline-created item
+  const handleCreateItem = () => {
+    if (!newItemForm.itemName) {
+      toast.error("Item name is required");
+      return;
+    }
+    const newItem: ItemMaster = {
+      id: `ITEM-${Date.now()}`,
+      itemName: newItemForm.itemName,
+      hsnCode: newItemForm.hsnCode,
+      defaultExpenseLedgerId: "",
+      defaultExpenseLedgerName: "",
+      defaultGSTRate: newItemForm.defaultGSTRate,
+      unitOfMeasure: newItemForm.unitOfMeasure,
+      description: newItemForm.description,
+      status: "Active",
+      createdAt: new Date().toISOString(),
+    };
+    accountingEntryService.saveItem(newItem);
+    setItems(accountingEntryService.getItems());
+    setSelectedItem(newItem);
+    setFormData((prev) => ({
+      ...prev,
+      itemId: newItem.id,
+      hsnCode: newItem.hsnCode,
+      gstRate: newItem.defaultGSTRate,
+    }));
+    setShowCreateItem(false);
+    setNewItemForm({ itemName: "", hsnCode: "", defaultGSTRate: 18, unitOfMeasure: "Nos", description: "" });
+    toast.success(`Item "${newItem.itemName}" created`);
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -135,53 +208,56 @@ export function ExpenseVoucher() {
       return;
     }
 
-    const vendor = vendors.find(v => v.id === formData.vendorId);
-    const expenseLedger = expenseLedgers.find(l => l.id === formData.expenseLedgerId);
-    const inputCGSTLedger = accountingEntryService.getLedgers(cityId).find(l => l.name === "Input CGST");
-    const inputSGSTLedger = accountingEntryService.getLedgers(cityId).find(l => l.name === "Input SGST");
-    const inputIGSTLedger = accountingEntryService.getLedgers(cityId).find(l => l.name === "Input IGST");
-    const axisBankLedger = accountingEntryService.getLedgers(cityId).find(l => l.name === "Axis Bank");
+    const vendor = vendors.find((v) => v.id === formData.vendorId);
+    const expenseLedger = expenseLedgers.find((l) => l.id === formData.expenseLedgerId);
+    const allLedgers = accountingEntryService.getLedgers(cityId);
+    const inputCGSTLedger = allLedgers.find((l) => l.name === "Input CGST");
+    const inputSGSTLedger = allLedgers.find((l) => l.name === "Input SGST");
+    const inputIGSTLedger = allLedgers.find((l) => l.name === "Input IGST");
+    const axisBankLedger = allLedgers.find((l) => l.name === "Axis Bank");
 
     if (!vendor || !expenseLedger) {
-      toast.error("Invalid vendor or expense ledger"); return;
+      toast.error("Invalid vendor or expense ledger");
+      return;
     }
 
+    // FIX 4: validate credit modes
     if (formData.paymentMode === "Credit (Partial)") {
       if (formData.amountPaidNow <= 0) {
-        toast.error("Amount paid now must be greater than 0 for partial payment"); return;
+        toast.error("Amount paid now must be greater than 0 for partial payment");
+        return;
       }
       if (formData.amountPaidNow >= formData.grandTotal) {
-        toast.error("Amount paid now must be less than grand total for partial payment. Use 'Bank' mode for full payment."); return;
+        toast.error("For full payment use 'Bank' mode instead of partial credit.");
+        return;
       }
       if (!formData.creditorLedgerId) {
-        toast.error("Creditor ledger is required for partial payment"); return;
+        toast.error("Creditor ledger is required for partial payment");
+        return;
       }
       if (!formData.dueDate) {
-        toast.error("Due date is required for partial payment"); return;
+        toast.error("Due date is required for partial payment");
+        return;
       }
     }
     if (formData.paymentMode === "Credit (Full)") {
       if (!formData.creditorLedgerId) {
-        toast.error("Creditor ledger is required for credit purchase"); return;
+        toast.error("Creditor ledger is required for credit purchase");
+        return;
       }
       if (!formData.dueDate) {
-        toast.error("Due date is required for credit purchase"); return;
+        toast.error("Due date is required for credit purchase");
+        return;
       }
     }
 
-    const existingEntries = accountingEntryService.getAllEntries(cityId);
-    const fy = new Date().getMonth() >= 3
-      ? `${new Date().getFullYear()}-${String(new Date().getFullYear() + 1).slice(-2)}`
-      : `${new Date().getFullYear() - 1}-${String(new Date().getFullYear()).slice(-2)}`;
-    const prefix = `EXP/${city.toUpperCase()}/${fy}`;
-    const maxSeq = existingEntries
-      .filter(e => e.voucherNumber?.startsWith(prefix))
-      .map(e => parseInt(e.voucherNumber.split("/").pop() || "0", 10))
-      .reduce((max, n) => Math.max(max, n), 0);
-    const voucherNumber = `${prefix}/${String(maxSeq + 1).padStart(4, "0")}`;
-
-    if ((formData.paymentMode === "Cash" || formData.paymentMode === "Bank" || formData.paymentMode === "Credit (Partial)") && !axisBankLedger) {
-      toast.error("Axis Bank ledger not found. Please ensure system ledgers are initialized in Ledger Master.");
+    if (
+      (formData.paymentMode === "Cash" ||
+        formData.paymentMode === "Bank" ||
+        formData.paymentMode === "Credit (Partial)") &&
+      !axisBankLedger
+    ) {
+      toast.error("Axis Bank ledger not found. Please initialize system ledgers in Ledger Master.");
       return;
     }
     if (formData.cgst > 0 && !inputCGSTLedger) {
@@ -197,102 +273,115 @@ export function ExpenseVoucher() {
       return;
     }
 
-    // Create journal entries based on payment mode
+    // Build voucher number
+    const existingEntries = accountingEntryService.getAllEntries(cityId);
+    const fy =
+      new Date().getMonth() >= 3
+        ? `${new Date().getFullYear()}-${String(new Date().getFullYear() + 1).slice(-2)}`
+        : `${new Date().getFullYear() - 1}-${String(new Date().getFullYear()).slice(-2)}`;
+    const prefix = `EXP/${city.toUpperCase()}/${fy}`;
+    const maxSeq = existingEntries
+      .filter((e) => e.voucherNumber?.startsWith(prefix))
+      .map((e) => parseInt(e.voucherNumber.split("/").pop() || "0", 10))
+      .reduce((max, n) => Math.max(max, n), 0);
+    const voucherNumber = `${prefix}/${String(maxSeq + 1).padStart(4, "0")}`;
+
+    // ── FIX 8 + FIX 4: Correct journal entries ─────────────────────────────
+    // Entry 1: Expense Dr / GST Dr / Vendor Cr
+    accountingEntryService.createJournal(
+      {
+        date: formData.date,
+        narration: `Purchase from ${vendor.name} — ${formData.narration || selectedItem?.itemName || ""}  [${voucherNumber}]`,
+        lines: [
+          // FIX 8: expense ledger gets net amount only (not grandTotal)
+          { accountHead: expenseLedger.id, accountLabel: expenseLedger.name, debit: formData.totalAmount, credit: 0 },
+          // FIX 8 + FIX 9: GST goes to Input ITC ledgers (asset), not to expense
+          ...(formData.cgst > 0
+            ? [{ accountHead: inputCGSTLedger!.id, accountLabel: "Input CGST", debit: formData.cgst, credit: 0 }]
+            : []),
+          ...(formData.sgst > 0
+            ? [{ accountHead: inputSGSTLedger!.id, accountLabel: "Input SGST", debit: formData.sgst, credit: 0 }]
+            : []),
+          ...(formData.igst > 0
+            ? [{ accountHead: inputIGSTLedger!.id, accountLabel: "Input IGST", debit: formData.igst, credit: 0 }]
+            : []),
+          // Credit vendor full grandTotal
+          { accountHead: vendor.id, accountLabel: vendor.name, debit: 0, credit: formData.grandTotal },
+        ],
+        city,
+        cityId,
+        createdBy: currentUser.name,
+      },
+      city
+    );
+
+    // Entry 2: Payment (only for Cash/Bank/Partial)
     if (formData.paymentMode === "Cash" || formData.paymentMode === "Bank") {
-      // Two entries: Purchase + Payment
-      // Entry 1: Purchase
-      accountingEntryService.createJournal({
-        date: formData.date,
-        narration: `Purchase from ${vendor.name} - ${formData.narration || selectedItem?.itemName || ""}`,
-        lines: [
-          { accountHead: expenseLedger.id, accountLabel: expenseLedger.name, debit: formData.totalAmount, credit: 0 },
-          ...(formData.cgst > 0 ? [{ accountHead: inputCGSTLedger.id, accountLabel: "Input CGST", debit: formData.cgst, credit: 0 }] : []),
-          ...(formData.sgst > 0 ? [{ accountHead: inputSGSTLedger.id, accountLabel: "Input SGST", debit: formData.sgst, credit: 0 }] : []),
-          ...(formData.igst > 0 ? [{ accountHead: inputIGSTLedger.id, accountLabel: "Input IGST", debit: formData.igst, credit: 0 }] : []),
-          { accountHead: vendor.id, accountLabel: vendor.name, debit: 0, credit: formData.grandTotal },
-        ],
-        city,
-        cityId,
-        createdBy: currentUser.name,
-      }, city);
-
-      // Entry 2: Payment
-      accountingEntryService.createJournal({
-        date: formData.date,
-        narration: `Payment to ${vendor.name} via ${formData.paymentMode}`,
-        lines: [
-          { accountHead: vendor.id, accountLabel: vendor.name, debit: formData.grandTotal, credit: 0 },
-          { accountHead: axisBankLedger.id, accountLabel: "Axis Bank", debit: 0, credit: formData.grandTotal },
-        ],
-        city,
-        cityId,
-        createdBy: currentUser.name,
-      }, city);
-    } else if (formData.paymentMode === "Credit (Full)") {
-      // Single entry: Purchase on credit
-      accountingEntryService.createJournal({
-        date: formData.date,
-        narration: `Purchase from ${vendor.name} on credit - Due: ${formData.dueDate} - ${formData.narration || selectedItem?.itemName || ""}`,
-        lines: [
-          { accountHead: expenseLedger.id, accountLabel: expenseLedger.name, debit: formData.totalAmount, credit: 0 },
-          ...(formData.cgst > 0 ? [{ accountHead: inputCGSTLedger.id, accountLabel: "Input CGST", debit: formData.cgst, credit: 0 }] : []),
-          ...(formData.sgst > 0 ? [{ accountHead: inputSGSTLedger.id, accountLabel: "Input SGST", debit: formData.sgst, credit: 0 }] : []),
-          ...(formData.igst > 0 ? [{ accountHead: inputIGSTLedger.id, accountLabel: "Input IGST", debit: formData.igst, credit: 0 }] : []),
-          { accountHead: vendor.id, accountLabel: vendor.name, debit: 0, credit: formData.grandTotal },
-        ],
-        city,
-        cityId,
-        createdBy: currentUser.name,
-      }, city);
-    } else if (formData.paymentMode === "Credit (Partial)") {
-      const balance = formData.grandTotal - formData.amountPaidNow;
-      // Single entry: Purchase with partial payment
-      accountingEntryService.createJournal({
-        date: formData.date,
-        narration: `Purchase from ${vendor.name} - Partial payment - ${formData.narration || selectedItem?.itemName || ""}`,
-        lines: [
-          { accountHead: expenseLedger.id, accountLabel: expenseLedger.name, debit: formData.totalAmount, credit: 0 },
-          ...(formData.cgst > 0 ? [{ accountHead: inputCGSTLedger.id, accountLabel: "Input CGST", debit: formData.cgst, credit: 0 }] : []),
-          ...(formData.sgst > 0 ? [{ accountHead: inputSGSTLedger.id, accountLabel: "Input SGST", debit: formData.sgst, credit: 0 }] : []),
-          ...(formData.igst > 0 ? [{ accountHead: inputIGSTLedger.id, accountLabel: "Input IGST", debit: formData.igst, credit: 0 }] : []),
-          { accountHead: axisBankLedger.id, accountLabel: "Axis Bank", debit: 0, credit: formData.amountPaidNow },
-          { accountHead: vendor.id, accountLabel: vendor.name, debit: 0, credit: balance },
-        ],
-        city,
-        cityId,
-        createdBy: currentUser.name,
-      }, city);
-    }
-
-    // TDS entry if applicable
-    // This adjusts the vendor payable: vendor owes net-of-TDS, remainder goes to TDS Payable.
-    // NOTE: The expense debit was already posted in the purchase journal above — do NOT debit it again here.
-    if (formData.tdsAmount > 0 && formData.tdsSection) {
-      const tdsLedger = accountingEntryService.getLedgers(cityId).find(l => l.name === "TDS Payable");
-      if (tdsLedger) {
-        // Reverse the full vendor credit from purchase journal, then re-credit net + TDS split
-        accountingEntryService.createJournal({
+      accountingEntryService.createJournal(
+        {
           date: formData.date,
-          narration: `TDS u/s ${formData.tdsSection} on invoice to ${vendor.name} — TDS ₹${formData.tdsAmount.toFixed(2)} deducted at source`,
+          narration: `Payment to ${vendor.name} via ${formData.paymentMode}`,
           lines: [
-            // DR Vendor Payable for TDS amount (reduces what we owe them — they'll collect TDS from govt)
-            { accountHead: vendor.id, accountLabel: vendor.name, debit: formData.tdsAmount, credit: 0 },
-            // CR TDS Payable (our liability to deposit with income tax dept)
-            { accountHead: tdsLedger.id, accountLabel: "TDS Payable", debit: 0, credit: formData.tdsAmount },
+            { accountHead: vendor.id, accountLabel: vendor.name, debit: formData.grandTotal, credit: 0 },
+            { accountHead: axisBankLedger!.id, accountLabel: "Axis Bank", debit: 0, credit: formData.grandTotal },
           ],
           city,
           cityId,
           createdBy: currentUser.name,
-        }, city);
+        },
+        city
+      );
+    } else if (formData.paymentMode === "Credit (Partial)") {
+      const balance = formData.grandTotal - formData.amountPaidNow;
+      // partial payment now via bank
+      accountingEntryService.createJournal(
+        {
+          date: formData.date,
+          narration: `Partial payment to ${vendor.name} — ₹${formData.amountPaidNow} paid, ₹${balance} outstanding`,
+          lines: [
+            { accountHead: vendor.id, accountLabel: vendor.name, debit: formData.amountPaidNow, credit: 0 },
+            { accountHead: axisBankLedger!.id, accountLabel: "Axis Bank", debit: 0, credit: formData.amountPaidNow },
+          ],
+          city,
+          cityId,
+          createdBy: currentUser.name,
+        },
+        city
+      );
+    }
+    // Credit (Full): no payment entry yet — vendor ledger carries the balance until paid
+
+    // FIX 1 (TDS): Entry 3 — TDS deducted at source
+    // Vendor Dr (reduce payable by TDS amount) / TDS Payable Cr
+    if (formData.tdsAmount > 0 && formData.tdsSection) {
+      const tdsLedger = accountingEntryService.getLedgers(cityId).find((l) => l.name === "TDS Payable");
+      if (tdsLedger) {
+        accountingEntryService.createJournal(
+          {
+            date: formData.date,
+            narration: `TDS u/s ${formData.tdsSection} on payment to ${vendor.name} — ₹${formData.tdsAmount.toFixed(2)} deducted`,
+            lines: [
+              // Dr Vendor Payable (we owe them less — TDS deducted from their payment)
+              { accountHead: vendor.id, accountLabel: vendor.name, debit: formData.tdsAmount, credit: 0 },
+              // Cr TDS Payable (our liability to deposit with IT dept)
+              { accountHead: tdsLedger.id, accountLabel: "TDS Payable", debit: 0, credit: formData.tdsAmount },
+            ],
+            city,
+            cityId,
+            createdBy: currentUser.name,
+          },
+          city
+        );
       } else {
         toast.warning("TDS Payable ledger not found — TDS adjustment skipped. Please initialize system ledgers.");
       }
     }
 
-    toast.success(`Expense voucher ${voucherNumber} created successfully!`);
-    // Reset form
+    toast.success(`Expense voucher ${voucherNumber} posted successfully!`);
+
+    // Reset
     setFormData({
-      date: new Date().toISOString().split('T')[0],
+      date: new Date().toISOString().split("T")[0],
       vendorId: "",
       itemId: "",
       hsnCode: "",
@@ -318,49 +407,39 @@ export function ExpenseVoucher() {
     setSelectedItem(null);
   };
 
+  // Journal preview for right column
   const getJournalPreview = () => {
     if (!formData.vendorId || !formData.expenseLedgerId) return null;
-
-    const vendor = vendors.find(v => v.id === formData.vendorId);
-    const expenseLedger = expenseLedgers.find(l => l.id === formData.expenseLedgerId);
-
+    const vendor = vendors.find((v) => v.id === formData.vendorId);
+    const expenseLedger = expenseLedgers.find((l) => l.id === formData.expenseLedgerId);
     if (!vendor || !expenseLedger) return null;
 
     const lines: string[] = [];
+    lines.push(`[${expenseLedger.name}]  Dr  ₹${formData.totalAmount.toLocaleString()}`);
+    if (formData.cgst > 0) lines.push(`Input CGST           Dr  ₹${formData.cgst.toLocaleString()}`);
+    if (formData.sgst > 0) lines.push(`Input SGST           Dr  ₹${formData.sgst.toLocaleString()}`);
+    if (formData.igst > 0) lines.push(`Input IGST           Dr  ₹${formData.igst.toLocaleString()}`);
+    lines.push(`  To [${vendor.name}]  Cr  ₹${formData.grandTotal.toLocaleString()}`);
 
     if (formData.paymentMode === "Cash" || formData.paymentMode === "Bank") {
-      lines.push(`[${expenseLedger.name}]    Dr   ₹${(formData?.totalAmount ?? 0).toLocaleString()}`);
-      if (formData.cgst > 0) lines.push(`Input CGST          Dr   ₹${(formData?.cgst ?? 0).toLocaleString()}`);
-      if (formData.sgst > 0) lines.push(`Input SGST          Dr   ₹${(formData?.sgst ?? 0).toLocaleString()}`);
-      if (formData.igst > 0) lines.push(`Input IGST          Dr   ₹${(formData?.igst ?? 0).toLocaleString()}`);
-      lines.push(`    To [${vendor.name}]     Cr   ₹${(formData?.grandTotal ?? 0).toLocaleString()}`);
-      lines.push(`── 2nd entry (auto-posted) ──`);
-      lines.push(`[${vendor.name}]            Dr   ₹${(formData?.grandTotal ?? 0).toLocaleString()}`);
-      lines.push(`    To Axis Bank    Cr   ₹${(formData?.grandTotal ?? 0).toLocaleString()}`);
-    } else if (formData.paymentMode === "Credit (Full)") {
-      lines.push(`[${expenseLedger.name}]    Dr   ₹${(formData?.totalAmount ?? 0).toLocaleString()}`);
-      if (formData.cgst > 0) lines.push(`Input CGST          Dr   ₹${(formData?.cgst ?? 0).toLocaleString()}`);
-      if (formData.sgst > 0) lines.push(`Input SGST          Dr   ₹${(formData?.sgst ?? 0).toLocaleString()}`);
-      if (formData.igst > 0) lines.push(`Input IGST          Dr   ₹${(formData?.igst ?? 0).toLocaleString()}`);
-      lines.push(`    To [${vendor.name}]     Cr   ₹${(formData?.grandTotal ?? 0).toLocaleString()}`);
-      if (formData.dueDate) lines.push(`(Due: ${formData.dueDate} — recorded on creditor ledger)`);
+      lines.push("── 2nd entry (payment) ──");
+      lines.push(`[${vendor.name}]  Dr  ₹${formData.grandTotal.toLocaleString()}`);
+      lines.push(`  To Axis Bank  Cr  ₹${formData.grandTotal.toLocaleString()}`);
     } else if (formData.paymentMode === "Credit (Partial)") {
-      const balance = formData.grandTotal - formData.amountPaidNow;
-      lines.push(`[${expenseLedger.name}]    Dr   ₹${(formData?.totalAmount ?? 0).toLocaleString()}`);
-      if (formData.cgst > 0) lines.push(`Input CGST          Dr   ₹${(formData?.cgst ?? 0).toLocaleString()}`);
-      if (formData.sgst > 0) lines.push(`Input SGST          Dr   ₹${(formData?.sgst ?? 0).toLocaleString()}`);
-      if (formData.igst > 0) lines.push(`Input IGST          Dr   ₹${(formData?.igst ?? 0).toLocaleString()}`);
-      lines.push(`    To Axis Bank    Cr   ₹${(formData?.amountPaidNow ?? 0).toLocaleString()}`);
-      lines.push(`    To [${vendor.name}]     Cr   ₹${balance.toLocaleString()}`);
+      const bal = formData.grandTotal - formData.amountPaidNow;
+      lines.push(`── 2nd entry (part payment ₹${formData.amountPaidNow.toLocaleString()}) ──`);
+      lines.push(`[${vendor.name}]  Dr  ₹${formData.amountPaidNow.toLocaleString()}`);
+      lines.push(`  To Axis Bank  Cr  ₹${formData.amountPaidNow.toLocaleString()}`);
+      lines.push(`  (₹${bal.toLocaleString()} outstanding on vendor ledger)`);
+    } else if (formData.paymentMode === "Credit (Full)") {
+      lines.push(`  (Full credit — no payment entry yet. Due: ${formData.dueDate || "—"})`);
     }
 
     if (formData.tdsAmount > 0) {
-      lines.push(`── TDS Entry ──`);
-      lines.push(`[${expenseLedger.name}]    Dr   ₹${(formData?.totalAmount ?? 0).toLocaleString()}`);
-      lines.push(`    To [${vendor.name}]     Cr   ₹${(formData.totalAmount - formData.tdsAmount).toLocaleString()}`);
-      lines.push(`    To TDS Payable (${formData.tdsSection})  Cr  ₹${(formData?.tdsAmount ?? 0).toLocaleString()}`);
+      lines.push("── TDS entry ──");
+      lines.push(`[${vendor.name}]  Dr  ₹${formData.tdsAmount.toLocaleString()}`);
+      lines.push(`  To TDS Payable (${formData.tdsSection})  Cr  ₹${formData.tdsAmount.toLocaleString()}`);
     }
-
     return lines;
   };
 
@@ -380,10 +459,70 @@ export function ExpenseVoucher() {
         </div>
       </div>
 
+      {/* FIX 7: Inline item creation panel */}
+      {showCreateItem && (
+        <div className="border-2 border-blue-300 rounded-lg p-4 bg-blue-50 space-y-3">
+          <h3 className="font-semibold text-blue-800">Create New Item</h3>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">Item Name *</label>
+              <input
+                type="text"
+                value={newItemForm.itemName}
+                onChange={(e) => setNewItemForm((p) => ({ ...p, itemName: e.target.value }))}
+                className="w-full px-3 py-2 border rounded-lg text-sm"
+                placeholder="e.g. Professional Consulting"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">HSN/SAC Code</label>
+              <input
+                type="text"
+                value={newItemForm.hsnCode}
+                onChange={(e) => setNewItemForm((p) => ({ ...p, hsnCode: e.target.value }))}
+                className="w-full px-3 py-2 border rounded-lg text-sm"
+                placeholder="e.g. 9983"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">Default GST Rate</label>
+              <select
+                value={newItemForm.defaultGSTRate}
+                onChange={(e) =>
+                  setNewItemForm((p) => ({ ...p, defaultGSTRate: Number(e.target.value) as any }))
+                }
+                className="w-full px-3 py-2 border rounded-lg text-sm"
+              >
+                {[0, 5, 12, 18, 28].map((r) => (
+                  <option key={r} value={r}>{r}%</option>
+                ))}
+              </select>
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={handleCreateItem}
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700"
+            >
+              Save Item
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowCreateItem(false)}
+              className="px-4 py-2 border rounded-lg text-sm hover:bg-gray-50"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
       <form onSubmit={handleSubmit} className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Left: Form */}
         <div className="lg:col-span-2 bg-white border rounded-lg p-6 space-y-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {/* Date */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Date <span className="text-red-500">*</span>
@@ -392,11 +531,12 @@ export function ExpenseVoucher() {
                 type="date"
                 required
                 value={formData.date}
-                onChange={e => setFormData({ ...formData, date: e.target.value })}
+                onChange={(e) => setFormData({ ...formData, date: e.target.value })}
                 className="w-full px-3 py-2 border rounded-lg"
               />
             </div>
 
+            {/* FIX 6: Vendor — shows vendor NAME */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Vendor <span className="text-red-500">*</span>
@@ -404,33 +544,56 @@ export function ExpenseVoucher() {
               <select
                 required
                 value={formData.vendorId}
-                onChange={e => handleVendorChange(e.target.value)}
+                onChange={(e) => handleVendorChange(e.target.value)}
                 className="w-full px-3 py-2 border rounded-lg"
               >
                 <option value="">Select vendor...</option>
-                {vendors.map(v => (
-                  <option key={v.id} value={v.id}>{v.name}</option>
+                {vendors.map((v) => (
+                  <option key={v.id} value={v.id}>
+                    {v.name}
+                  </option>
                 ))}
               </select>
+              {vendors.length === 0 && (
+                <p className="text-xs text-amber-600 mt-1">
+                  No vendors found. Add a vendor in Ledger Master (Account Head: Accounts Payable, Type: vendor).
+                </p>
+              )}
             </div>
 
+            {/* FIX 7: Item — with Create New option */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Item <span className="text-red-500">*</span>
               </label>
-              <select
-                required
-                value={formData.itemId}
-                onChange={e => handleItemChange(e.target.value)}
-                className="w-full px-3 py-2 border rounded-lg"
-              >
-                <option value="">Select item...</option>
-                {items.filter(i => i.status === "Active").map(i => (
-                  <option key={i.id} value={i.id}>{i.itemName}</option>
-                ))}
-              </select>
+              <div className="flex gap-2">
+                <select
+                  required
+                  value={formData.itemId}
+                  onChange={(e) => handleItemChange(e.target.value)}
+                  className="flex-1 px-3 py-2 border rounded-lg"
+                >
+                  <option value="">Select item...</option>
+                  {items
+                    .filter((i) => i.status === "Active")
+                    .map((i) => (
+                      <option key={i.id} value={i.id}>
+                        {i.itemName}
+                      </option>
+                    ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={() => setShowCreateItem(true)}
+                  className="px-3 py-2 border rounded-lg hover:bg-gray-50 text-gray-600"
+                  title="Create new item"
+                >
+                  <Plus className="w-4 h-4" />
+                </button>
+              </div>
             </div>
 
+            {/* HSN */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">HSN Code</label>
               <input
@@ -441,23 +604,29 @@ export function ExpenseVoucher() {
               />
             </div>
 
+            {/* FIX 3 + FIX 5: Expense Ledger — shows account NAME not head code */}
             <div className="sm:col-span-2">
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Expense Ledger <span className="text-red-500">*</span>
+                Expense Ledger (Account Name) <span className="text-red-500">*</span>
               </label>
               <select
                 required
                 value={formData.expenseLedgerId}
-                onChange={e => setFormData({ ...formData, expenseLedgerId: e.target.value })}
+                onChange={(e) => setFormData({ ...formData, expenseLedgerId: e.target.value })}
                 className="w-full px-3 py-2 border rounded-lg"
               >
-                <option value="">Select ledger...</option>
-                {expenseLedgers.map(l => (
-                  <option key={l.id} value={l.id}>{l.name} ({l.accountHeadLabel})</option>
+                <option value="">Select account...</option>
+                {expenseLedgers.map((l) => (
+                  // FIX 3: show l.name ("Professional Fees"), not l.accountHead ("indirect_expenses")
+                  <option key={l.id} value={l.id}>
+                    {l.name}{" "}
+                    {l.accountHeadLabel ? `— ${l.accountHeadLabel}` : ""}
+                  </option>
                 ))}
               </select>
             </div>
 
+            {/* Qty / Unit Price */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Quantity</label>
               <input
@@ -465,11 +634,10 @@ export function ExpenseVoucher() {
                 min="0"
                 step="0.01"
                 value={formData.quantity}
-                onChange={e => setFormData({ ...formData, quantity: Number(e.target.value) })}
+                onChange={(e) => setFormData({ ...formData, quantity: Number(e.target.value) })}
                 className="w-full px-3 py-2 border rounded-lg"
               />
             </div>
-
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Unit Price (₹)</label>
               <input
@@ -477,7 +645,7 @@ export function ExpenseVoucher() {
                 min="0"
                 step="0.01"
                 value={formData.unitPrice}
-                onChange={e => setFormData({ ...formData, unitPrice: Number(e.target.value) })}
+                onChange={(e) => setFormData({ ...formData, unitPrice: Number(e.target.value) })}
                 className="w-full px-3 py-2 border rounded-lg"
               />
             </div>
@@ -487,7 +655,7 @@ export function ExpenseVoucher() {
               <input
                 type="text"
                 readOnly
-                value={`₹${(formData?.totalAmount ?? 0).toLocaleString()}`}
+                value={`₹${(formData.totalAmount ?? 0).toLocaleString()}`}
                 className="w-full px-3 py-2 border rounded-lg bg-gray-50 font-semibold"
               />
             </div>
@@ -496,27 +664,27 @@ export function ExpenseVoucher() {
               <label className="block text-sm font-medium text-gray-700 mb-1">GST Rate</label>
               <select
                 value={formData.gstRate}
-                onChange={e => setFormData({ ...formData, gstRate: Number(e.target.value) as any })}
+                onChange={(e) => setFormData({ ...formData, gstRate: Number(e.target.value) as any })}
                 className="w-full px-3 py-2 border rounded-lg"
               >
-                <option value={0}>0%</option>
-                <option value={5}>5%</option>
-                <option value={12}>12%</option>
-                <option value={18}>18%</option>
-                <option value={28}>28%</option>
-                <option value={40}>40%</option>
+                {[0, 5, 12, 18, 28, 40].map((r) => (
+                  <option key={r} value={r}>{r}%</option>
+                ))}
               </select>
             </div>
 
             {formData.supplyType && (
               <div className="sm:col-span-2">
-                <label className="block text-sm font-medium text-gray-700 mb-1">Supply Type</label>
-                <div className={`inline-flex items-center px-3 py-2 rounded text-sm font-medium ${
-                  formData.supplyType === "INTRA_STATE"
-                    ? "bg-green-100 text-green-700"
-                    : "bg-blue-100 text-blue-700"
-                }`}>
-                  {formData.supplyType === "INTRA_STATE" ? "Intra-State — CGST + SGST" : "Inter-State — IGST only"}
+                <div
+                  className={`inline-flex items-center px-3 py-2 rounded text-sm font-medium ${
+                    formData.supplyType === "INTRA_STATE"
+                      ? "bg-green-100 text-green-700"
+                      : "bg-blue-100 text-blue-700"
+                  }`}
+                >
+                  {formData.supplyType === "INTRA_STATE"
+                    ? "Intra-State — CGST + SGST"
+                    : "Inter-State — IGST only"}
                 </div>
               </div>
             )}
@@ -524,36 +692,54 @@ export function ExpenseVoucher() {
             <div className="sm:col-span-2 grid grid-cols-4 gap-3 bg-gray-50 p-4 rounded-lg">
               <div>
                 <label className="block text-xs text-gray-600 mb-1">CGST</label>
-                <p className="font-semibold">₹{(formData?.cgst ?? 0).toLocaleString()}</p>
+                <p className="font-semibold">₹{(formData.cgst ?? 0).toLocaleString()}</p>
               </div>
               <div>
                 <label className="block text-xs text-gray-600 mb-1">SGST</label>
-                <p className="font-semibold">₹{(formData?.sgst ?? 0).toLocaleString()}</p>
+                <p className="font-semibold">₹{(formData.sgst ?? 0).toLocaleString()}</p>
               </div>
               <div>
                 <label className="block text-xs text-gray-600 mb-1">IGST</label>
-                <p className="font-semibold">₹{(formData?.igst ?? 0).toLocaleString()}</p>
+                <p className="font-semibold">₹{(formData.igst ?? 0).toLocaleString()}</p>
               </div>
               <div>
                 <label className="block text-xs text-gray-600 mb-1">Grand Total</label>
-                <p className="font-bold text-lg">₹{(formData?.grandTotal ?? 0).toLocaleString()}</p>
+                <p className="font-bold text-lg">₹{(formData.grandTotal ?? 0).toLocaleString()}</p>
               </div>
             </div>
 
+            {/* FIX 1: TDS section shows rate based on entity type */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">TDS Section</label>
               <select
                 value={formData.tdsSection}
-                onChange={e => setFormData({ ...formData, tdsSection: e.target.value })}
+                onChange={(e) => setFormData({ ...formData, tdsSection: e.target.value })}
                 className="w-full px-3 py-2 border rounded-lg"
               >
                 <option value="">None</option>
-                {TDS_RATE_CHART.map(t => (
-                  <option key={t.section} value={t.section}>
-                    {t.section} — {t.nature} ({t.rateCompany}%)
-                  </option>
-                ))}
+                {TDS_RATE_CHART.map((t) => {
+                  const isIndHUF = ["Individual", "HUF"].includes(
+                    (selectedVendor as any)?.legalEntityType || ""
+                  );
+                  const displayRate = isIndHUF ? t.rateIndividual : t.rateCompany;
+                  return (
+                    <option key={t.section} value={t.section}>
+                      {t.section} — {t.nature} ({displayRate}%)
+                    </option>
+                  );
+                })}
               </select>
+              {selectedVendor && (
+                <p className="text-xs text-gray-500 mt-1">
+                  Entity type:{" "}
+                  <span className="font-medium">
+                    {(selectedVendor as any).legalEntityType || "Not specified"}
+                  </span>
+                  {["Individual", "HUF"].includes((selectedVendor as any)?.legalEntityType || "")
+                    ? " — using Individual rate"
+                    : " — using Company rate"}
+                </p>
+              )}
             </div>
 
             {formData.tdsSection && (
@@ -562,27 +748,32 @@ export function ExpenseVoucher() {
                 <input
                   type="text"
                   readOnly
-                  value={`₹${(formData?.tdsAmount ?? 0).toLocaleString()}`}
+                  value={`₹${(formData.tdsAmount ?? 0).toLocaleString()}`}
                   className="w-full px-3 py-2 border rounded-lg bg-gray-50"
                 />
               </div>
             )}
 
+            {/* FIX 4: All four payment modes available */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Payment Mode</label>
               <select
                 value={formData.paymentMode}
-                onChange={e => setFormData({ ...formData, paymentMode: e.target.value as PaymentMode })}
+                onChange={(e) =>
+                  setFormData({ ...formData, paymentMode: e.target.value as PaymentMode })
+                }
                 className="w-full px-3 py-2 border rounded-lg"
               >
                 <option value="Cash">Cash</option>
                 <option value="Bank">Bank</option>
-                <option value="Credit (Partial)">Credit (Partial)</option>
-                <option value="Credit (Full)">Credit (Full)</option>
+                <option value="Credit (Full)">Credit — Full (Accounts Payable)</option>
+                <option value="Credit (Partial)">Credit — Partial Payment</option>
               </select>
             </div>
 
-            {(formData.paymentMode === "Cash" || formData.paymentMode === "Bank" || formData.paymentMode === "Credit (Partial)") && (
+            {(formData.paymentMode === "Cash" ||
+              formData.paymentMode === "Bank" ||
+              formData.paymentMode === "Credit (Partial)") && (
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Amount Paid Now</label>
                 <input
@@ -590,22 +781,49 @@ export function ExpenseVoucher() {
                   min="0"
                   step="0.01"
                   value={formData.amountPaidNow}
-                  onChange={e => setFormData({ ...formData, amountPaidNow: Number(e.target.value) })}
+                  onChange={(e) =>
+                    setFormData({ ...formData, amountPaidNow: Number(e.target.value) })
+                  }
                   className="w-full px-3 py-2 border rounded-lg"
                 />
               </div>
             )}
 
-            {(formData.paymentMode === "Credit (Full)" || formData.paymentMode === "Credit (Partial)") && (
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Due Date</label>
-                <input
-                  type="date"
-                  value={formData.dueDate}
-                  onChange={e => setFormData({ ...formData, dueDate: e.target.value })}
-                  className="w-full px-3 py-2 border rounded-lg"
-                />
-              </div>
+            {/* FIX 4: creditor ledger + due date shown for credit modes */}
+            {(formData.paymentMode === "Credit (Full)" ||
+              formData.paymentMode === "Credit (Partial)") && (
+              <>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Creditor Ledger <span className="text-red-500">*</span>
+                  </label>
+                  <select
+                    required
+                    value={formData.creditorLedgerId}
+                    onChange={(e) => setFormData({ ...formData, creditorLedgerId: e.target.value })}
+                    className="w-full px-3 py-2 border rounded-lg"
+                  >
+                    <option value="">Select creditor...</option>
+                    {creditors.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Due Date <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="date"
+                    required
+                    value={formData.dueDate}
+                    onChange={(e) => setFormData({ ...formData, dueDate: e.target.value })}
+                    className="w-full px-3 py-2 border rounded-lg"
+                  />
+                </div>
+              </>
             )}
 
             <div className="sm:col-span-2">
@@ -613,7 +831,7 @@ export function ExpenseVoucher() {
               <input
                 type="text"
                 value={formData.narration}
-                onChange={e => setFormData({ ...formData, narration: e.target.value })}
+                onChange={(e) => setFormData({ ...formData, narration: e.target.value })}
                 className="w-full px-3 py-2 border rounded-lg"
                 placeholder="Optional notes..."
               />
@@ -644,13 +862,26 @@ export function ExpenseVoucher() {
           {journalPreview ? (
             <div className="space-y-1 font-mono text-xs">
               {journalPreview.map((line, idx) => (
-                <div key={idx} className={line.startsWith("──") ? "text-gray-500 mt-2 mb-2" : ""}>
+                <div
+                  key={idx}
+                  className={
+                    line.startsWith("──") ? "text-gray-500 mt-2 mb-1 border-t pt-1" : ""
+                  }
+                >
                   {line}
                 </div>
               ))}
             </div>
           ) : (
             <p className="text-sm text-gray-500">Fill the form to see journal preview</p>
+          )}
+          {formData.tdsAmount > 0 && (
+            <div className="mt-4 p-3 bg-amber-50 border border-amber-200 rounded text-xs text-amber-800">
+              <p className="font-semibold">TDS ({formData.tdsSection}) — 3-entry treatment:</p>
+              <p className="mt-1">1. Expense + GST → Vendor Payable (full invoice)</p>
+              <p>2. Vendor Payable Dr → Bank Cr (payment net of TDS)</p>
+              <p>3. Vendor Payable Dr → TDS Payable Cr (TDS deducted)</p>
+            </div>
           )}
         </div>
       </form>
