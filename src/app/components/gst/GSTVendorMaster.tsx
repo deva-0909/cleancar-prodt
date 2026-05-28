@@ -312,6 +312,8 @@ function VendorForm({ vendor, onSave, onClose }: {
     gstCertificate: undefined,
     panCertificate: undefined,
     approvalStatus: undefined,
+    // FIX 2: registration type drives GSTIN requirement
+    registrationType: "Regular" as "Regular" | "Composition" | "URP" | "SEZ" | "Government",
   });
 
   const [gstinError, setGstinError] = useState("");
@@ -435,7 +437,9 @@ function VendorForm({ vendor, onSave, onClose }: {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!gstinValid) {
+    // FIX 2: GSTIN required only for Regular/SEZ/Government vendors
+    const gstinRequired = ["Regular", "SEZ", "Government"].includes(formData.registrationType || "Regular");
+    if (gstinRequired && !gstinValid) {
       toast.error("Please fix GSTIN validation errors");
       return;
     }
@@ -480,14 +484,45 @@ function VendorForm({ vendor, onSave, onClose }: {
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
               />
             </div>
+            {/* FIX 2: Registration Type determines if GSTIN is required */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                GSTIN <span className="text-red-500">*</span>
+                Registration Type <span className="text-red-500">*</span>
+              </label>
+              <select
+                required
+                value={formData.registrationType || "Regular"}
+                onChange={e => setFormData(prev => ({ ...prev, registrationType: e.target.value as any }))}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+              >
+                <option value="Regular">Regular Taxpayer (GSTIN required)</option>
+                <option value="Composition">Composition Dealer (GSTIN required)</option>
+                <option value="URP">URP — Unregistered Person (no GSTIN)</option>
+                <option value="SEZ">SEZ Unit (GSTIN required)</option>
+                <option value="Government">Government Body (GSTIN optional)</option>
+              </select>
+              {formData.registrationType === "URP" && (
+                <p className="text-xs text-amber-700 mt-1 bg-amber-50 border border-amber-200 rounded px-2 py-1">
+                  URP: No input credit available. Reverse Charge Mechanism may apply.
+                </p>
+              )}
+              {formData.registrationType === "Composition" && (
+                <p className="text-xs text-blue-700 mt-1 bg-blue-50 border border-blue-200 rounded px-2 py-1">
+                  Composition dealer: Input credit NOT claimable on purchases from this vendor.
+                </p>
+              )}
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                GSTIN {["Regular","Composition","SEZ"].includes(formData.registrationType || "Regular")
+                  ? <span className="text-red-500">*</span>
+                  : <span className="text-gray-400 text-xs">(optional — {formData.registrationType})</span>}
               </label>
               <div className="relative">
                 <input
                   type="text"
-                  required
+                  required={["Regular","Composition","SEZ"].includes(formData.registrationType || "Regular")}
                   value={formData.gstin}
                   onChange={e => setFormData(prev => ({ ...prev, gstin: e.target.value.toUpperCase() }))}
                   onBlur={handleGSTINBlur}
