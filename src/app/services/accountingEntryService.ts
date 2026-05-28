@@ -45,6 +45,8 @@ export const CHART_OF_ACCOUNTS_HEADS = [
   { value: "other_income",        label: "Other Income",             nature: "income" },
   // EXPENSES
   { value: "cogs",                label: "Cost of Goods Sold",       nature: "expense" },
+  // FIX 8: "purchase" head maps to COGS so purchases appear in P&L
+  { value: "purchase",            label: "Purchases",                nature: "expense" },
   { value: "direct_expenses",     label: "Direct Expenses",          nature: "expense" },
   { value: "indirect_expenses",   label: "Indirect Expenses",        nature: "expense" },
   { value: "depreciation",        label: "Depreciation",             nature: "expense" },
@@ -280,6 +282,52 @@ export function validateGSTIN(gstin: string): { valid: boolean; stateCode: strin
 }
 
 export function autoPostLedger(entry: AccountingEntry): JournalLine[] {
+  // FIX 9: AssetPurchase — split base value to fixed_assets, GST to gst_input
+  // Credit Accounts Payable (not Bank) when paymentMode is Credit
+  if (entry.entryType === "AssetPurchase") {
+    const lines: JournalLine[] = [
+      // Dr Fixed Asset — base taxable value only (NOT grandTotal)
+      { accountHead: entry.debitAccount, accountLabel: "Fixed Asset", debit: entry.taxableValue, credit: 0 },
+    ];
+    // Dr Input GST ledgers separately (asset, not expense)
+    if ((entry.cgst ?? 0) > 0) {
+      lines.push({ accountHead: "gst_input", accountLabel: "Input CGST", debit: entry.cgst ?? 0, credit: 0 });
+    }
+    if ((entry.sgst ?? 0) > 0) {
+      lines.push({ accountHead: "gst_input", accountLabel: "Input SGST", debit: entry.sgst ?? 0, credit: 0 });
+    }
+    if ((entry.igst ?? 0) > 0) {
+      lines.push({ accountHead: "gst_input", accountLabel: "Input IGST", debit: entry.igst ?? 0, credit: 0 });
+    }
+    // FIX 9: Cr Accounts Payable (not Bank) when payment mode is credit
+    const isCreditPayment = entry.paymentMode !== "Bank" && entry.paymentMode !== "Cash" && entry.paymentMode !== "PettyCash";
+    const creditHead = isCreditPayment ? "accounts_payable" : entry.creditAccount;
+    const creditLabel = isCreditPayment ? "Accounts Payable" : entry.creditAccount;
+    lines.push({ accountHead: creditHead, accountLabel: creditLabel, debit: 0, credit: entry.totalBillValue });
+    return lines;
+  }
+
+  // FIX 8: Expense/Purchase — split GST to gst_input (asset), not to expense ledger
+  if (entry.entryType === "Expense" || entry.entryType === "Purchase") {
+    const lines: JournalLine[] = [
+      // Dr Expense — taxable value only
+      { accountHead: entry.debitAccount, accountLabel: entry.debitAccount, debit: entry.taxableValue, credit: 0 },
+    ];
+    if ((entry.cgst ?? 0) > 0) {
+      lines.push({ accountHead: "gst_input", accountLabel: "Input CGST", debit: entry.cgst ?? 0, credit: 0 });
+    }
+    if ((entry.sgst ?? 0) > 0) {
+      lines.push({ accountHead: "gst_input", accountLabel: "Input SGST", debit: entry.sgst ?? 0, credit: 0 });
+    }
+    if ((entry.igst ?? 0) > 0) {
+      lines.push({ accountHead: "gst_input", accountLabel: "Input IGST", debit: entry.igst ?? 0, credit: 0 });
+    }
+    // Cr vendor/bank for full invoice value
+    lines.push({ accountHead: entry.creditAccount, accountLabel: entry.creditAccount, debit: 0, credit: entry.totalBillValue });
+    return lines;
+  }
+
+  // Default: simple two-line entry for Sales, PurchaseReturn, SalesReturn
   return [
     { accountHead: entry.debitAccount,  accountLabel: entry.debitAccount,  debit: entry.totalBillValue, credit: 0 },
     { accountHead: entry.creditAccount, accountLabel: entry.creditAccount, debit: 0, credit: entry.totalBillValue },
