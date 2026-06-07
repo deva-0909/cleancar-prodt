@@ -242,6 +242,7 @@ import { GSTR1Module } from "./components/gst/GSTR1Module";
 import { GSTR3BModule } from "./components/gst/GSTR3BModule";
 import { GSTFilingModule } from "./components/gst/GSTFilingModule";
 import { GSTMonitoringModule } from "./components/gst/GSTMonitoringModule";
+import { GSTR9Module } from "./components/gst/GSTR9Module";
 import { BusinessFlowDemo } from "./components/BusinessFlowDemo";
 import { UnauthorizedPage } from "./components/pages/UnauthorizedPage";
 import { LoginPage } from "./pages/LoginPage";
@@ -401,6 +402,7 @@ export const router = createBrowserRouter([
       { path: "gst/gstr3b", element: <GSTR3BModule /> },
       { path: "gst/filing", element: <GSTFilingModule /> },
       { path: "gst/monitoring", element: <GSTMonitoringModule /> },
+      { path: "gst/gstr9", element: <GSTR9Module /> },
       { path: "admin/payroll-approval", element: <SuperAdminPayrollApproval /> },
       { path: "admin/city-management", element: <CityManagement /> },
       { path: "admin/business-rules", element: <BusinessRulesPage /> },
