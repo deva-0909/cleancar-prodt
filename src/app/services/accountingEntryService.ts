@@ -1,4 +1,5 @@
 import { DataService } from "./DataService";
+import { upsertFinanceLedgerEntry } from "./supabaseFinanceAdapter";
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 export const GST_STATES: Record<string, string> = {
@@ -360,8 +361,9 @@ class AccountingEntryService {
   }
   private saveEntries(entries: AccountingEntry[]): void {
     localStorage.setItem(this.ENTRIES_KEY, JSON.stringify(entries));
+    entries.forEach(e =>
+      upsertFinanceLedgerEntry(e as unknown as Record<string, unknown>).catch(console.warn));
   }
-  private getJournals(): JournalEntry[] {
     try { return JSON.parse(localStorage.getItem(this.JOURNAL_KEY) || "[]"); }
     catch { return []; }
   }

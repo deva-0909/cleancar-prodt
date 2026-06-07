@@ -1,3 +1,4 @@
+import { upsertGSTTransaction, upsertGSTVendor } from "./supabaseFinanceAdapter";
 // Single source of truth for company GST configuration
 // Update this object for each deployment, never hardcode in components
 export const COMPANY_GST_CONFIG = {
@@ -278,6 +279,14 @@ class GSTComplianceService {
   }
   private saveList<T>(key: string, list: T[]): void {
     localStorage.setItem(key, JSON.stringify(list));
+    if (key === this.TXN_KEY) {
+      (list as unknown as GSTTransaction[]).forEach(t =>
+        upsertGSTTransaction(t as unknown as Record<string, unknown>).catch(console.warn));
+    }
+    if (key === this.VENDOR_KEY) {
+      (list as unknown as GSTVendor[]).forEach(v =>
+        upsertGSTVendor(v as unknown as Record<string, unknown>).catch(console.warn));
+    }
   }
 
   getVendors(): GSTVendor[]       { return this.getList<GSTVendor>(this.VENDOR_KEY); }
