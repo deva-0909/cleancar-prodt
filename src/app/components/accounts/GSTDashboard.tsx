@@ -66,14 +66,24 @@ export function GSTDashboard() {
     [totalRevenue]
   );
 
-  const gstPayableData = useMemo(() => [
-    { month: "Oct", payable: 65000, credit: 35000, net: 30000, id: "gst-oct" },
-    { month: "Nov", payable: 72000, credit: 38000, net: 34000, id: "gst-nov" },
-    { month: "Dec", payable: 68000, credit: 36000, net: 32000, id: "gst-dec" },
-    { month: "Jan", payable: 82000, credit: 45000, net: 37000, id: "gst-jan" },
-    { month: "Feb", payable: 78000, credit: 42000, net: 36000, id: "gst-feb" },
-    { month: "Mar", payable: 78000, credit: 42000, net: 36000, id: "gst-mar" }
-  ], []);
+  const gstPayableData = useMemo(() => {
+    const CHART_MONTHS = [
+      { label: "Oct", num: 10 }, { label: "Nov", num: 11 }, { label: "Dec", num: 12 },
+      { label: "Jan", num: 1  }, { label: "Feb", num: 2  }, { label: "Mar", num: 3  },
+    ];
+    const now = new Date();
+    const fy  = now.getMonth() >= 3 ? now.getFullYear() : now.getFullYear() - 1;
+    return CHART_MONTHS.map(({ label, num }) => {
+      const year = num >= 4 ? fy : fy + 1;
+      const txns = savedTransactions.filter(t => {
+        const d = new Date(t.invoiceDate);
+        return d.getMonth() + 1 === num && d.getFullYear() === year;
+      });
+      const payable = txns.filter(t => t.transactionType === "Sale" && t.status === "Approved").reduce((s, t) => s + t.totalTax, 0);
+      const credit  = txns.filter(t => t.transactionType === "Purchase" && t.itcEligible && t.status === "Approved").reduce((s, t) => s + t.itcAmount, 0);
+      return { month: label, payable, credit, net: Math.max(0, payable - credit), id: `gst-${label.toLowerCase()}` };
+    });
+  }, [savedTransactions]);
 
   const inputCreditData = savedTransactions
     .filter(t => t.transactionType === "Purchase" && t.totalTax > 0)

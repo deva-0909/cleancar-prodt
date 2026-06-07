@@ -35,14 +35,18 @@ export function GSTFilingModule() {
     setChecklist(prev => ({ ...prev, [key]: !prev[key] }));
   };
 
-  const summaryData = {
-    totalTransactions: 150,
-    totalTaxableValue: 5250000,
-    totalOutputTax: 945000,
-    totalITC: 425000,
-    netTaxPayable: 520000,
-    lateFeePenalty: 0
-  };
+  const summaryData = useMemo(() => {
+    const periodTxns = gstComplianceService
+      .getTransactionsByMonth(selectedMonth, selectedYear, city)
+      .filter(t => t.status === "Approved");
+    const salesTxns    = periodTxns.filter(t => t.transactionType === "Sale");
+    const purchaseTxns = periodTxns.filter(t => t.transactionType === "Purchase");
+    const totalTaxableValue = salesTxns.reduce((s, t) => s + t.taxableValue, 0);
+    const totalOutputTax    = salesTxns.reduce((s, t) => s + t.totalTax, 0);
+    const totalITC          = purchaseTxns.filter(t => t.itcEligible).reduce((s, t) => s + t.itcAmount, 0);
+    const netTaxPayable     = Math.max(0, totalOutputTax - totalITC);
+    return { totalTransactions: periodTxns.length, totalTaxableValue, totalOutputTax, totalITC, netTaxPayable, lateFeePenalty: 0 };
+  }, [selectedMonth, selectedYear, city]);
 
   const handleDownloadFilingPackage = (e: React.MouseEvent) => {
     const data = [{

@@ -90,8 +90,10 @@ export function GSTR1Module() {
   }, [monthTransactions]);
 
   const previousMonthData = useMemo(() => {
-    const prevMonth = selectedMonth === "April" ? "March" : "March";
-    const prevYear = selectedMonth === "April" ? selectedYear : selectedYear;
+    const MONTH_ORDER = ["April","May","June","July","August","September","October","November","December","January","February","March"];
+    const prevIdx = MONTH_ORDER.indexOf(selectedMonth);
+    const prevMonth = prevIdx > 0 ? MONTH_ORDER[prevIdx - 1] : "March";
+    const prevYear = (selectedMonth === "January" || selectedMonth === "February" || selectedMonth === "March") ? selectedYear - 1 : selectedYear;
     const prevTransactions = transactions.filter(t =>
       t.month === prevMonth &&
       t.year === prevYear &&
