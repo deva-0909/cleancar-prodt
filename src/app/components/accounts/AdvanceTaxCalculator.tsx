@@ -137,7 +137,7 @@ export default function AdvanceTaxCalculator() {
   // ── Tax & instalment calculations ──────────────────────────────────────────
   const { taxLiability, netTaxLiability, instalments } = useMemo(() => {
     const taxLiability = taxType === "company"
-      ? Math.round(estimatedProfit * 0.26)
+      ? calculateCompanyTax(estimatedProfit)
       : calculateIndividualTax(estimatedProfit);
 
     const netTaxLiability = Math.max(0, taxLiability - tdsDeducted);
