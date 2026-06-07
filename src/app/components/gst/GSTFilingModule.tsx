@@ -2,13 +2,13 @@ import { useState, useMemo } from "react";
 import { toast } from "sonner";
 import { Upload, Check, ChevronRight, Download, CheckCircle } from "lucide-react";
 import { showExportMenu } from "../../utils/gstExportUtils";
-import { gstComplianceService } from "../../services/gstComplianceService";
+import { gstComplianceService, COMPANY_GST_CONFIG } from "../../services/gstComplianceService";
 import { useCity } from "../../contexts/CityContext";
 
 export function GSTFilingModule() {
   const { city } = useCity();
   const [currentStep, setCurrentStep] = useState(1);
-  const [selectedGSTIN, setSelectedGSTIN] = useState("24GAOPS5676E1Z3");
+  const [selectedGSTIN, setSelectedGSTIN] = useState(COMPANY_GST_CONFIG.gstin);
   const [selectedMonth, setSelectedMonth] = useState(4);
   const [selectedYear, setSelectedYear] = useState(2026);
   const [filingReference, setFilingReference] = useState("");

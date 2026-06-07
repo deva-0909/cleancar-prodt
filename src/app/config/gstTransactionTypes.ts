@@ -226,8 +226,8 @@ export const SYSTEM_TRANSACTION_SUB_TYPES: TransactionSubType[] = [
     parentType: "Expense",
     label: "Bank Charges",
     description: "Bank processing fees, cheque book, NEFT charges, locker charges",
-    itcEligible: false,
-    itcRule: "Bank charges may or may not have GST. If GST charged, ITC eligible — Section 16.",
+    itcEligible: true,
+    itcRule: "ITC eligible when bank issues GST invoice on fees/NEFT charges — Section 16. No GST on exempt banking services."
     hsnHint: "9971 (financial services SAC)",
     accountHead: "Bank Charges",
     isCustom: false,

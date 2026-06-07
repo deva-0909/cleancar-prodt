@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import { ReceiptText, Download, AlertTriangle, Lock } from "lucide-react";
-import { gstComplianceService } from "../../services/gstComplianceService";
+import { gstComplianceService, COMPANY_GST_CONFIG } from "../../services/gstComplianceService";
 import { showExportMenu } from "../../utils/gstExportUtils";
 import { useCity } from "../../contexts/CityContext";
 
@@ -8,7 +8,7 @@ export function GSTR3BModule() {
   const { city } = useCity();
   const [selectedMonth, setSelectedMonth] = useState(4);
   const [selectedYear, setSelectedYear] = useState(2026);
-  const [selectedGSTIN, setSelectedGSTIN] = useState("24GAOPS5676E1Z3");
+  const [selectedGSTIN, setSelectedGSTIN] = useState(COMPANY_GST_CONFIG.gstin);
   const [status, setStatus] = useState<"Not Generated" | "Generated" | "Approved" | "Ready to File">("Not Generated");
   const [isApproved, setIsApproved] = useState(false);
 

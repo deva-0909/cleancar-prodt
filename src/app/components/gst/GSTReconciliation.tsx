@@ -39,12 +39,23 @@ export function GSTReconciliation() {
 
     const reader = new FileReader();
     reader.onload = (event) => {
-      const text = event.target?.result as string;
+      const rawText = event.target?.result as string;
+      const text = rawText.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+      const parseCSVLine = (line: string): string[] => {
+        const result: string[] = []; let cur = "", inQuotes = false;
+        for (const ch of line) {
+          if (ch === "\"" && !inQuotes) { inQuotes = true; }
+          else if (ch === "\"" && inQuotes) { inQuotes = false; }
+          else if (ch === "," && !inQuotes) { result.push(cur.trim()); cur = ""; }
+          else { cur += ch; }
+        }
+        result.push(cur.trim()); return result;
+      };
       const lines = text.split('\n').filter(l => l.trim());
-      const headers = lines[0].split(',');
+      const headers = parseCSVLine(lines[0]);
 
       const newRecords: GSTReconciliationRecord[] = lines.slice(1).map((line, idx) => {
-        const values = line.split(',');
+        const values = parseCSVLine(line);
         return {
           id: crypto.randomUUID(),
           vendorId: `vendor-${idx}`,

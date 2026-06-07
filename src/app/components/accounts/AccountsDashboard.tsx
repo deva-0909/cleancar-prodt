@@ -93,7 +93,7 @@ export function AccountsDashboard() {
     const gstInput   = periodEntries.filter(e => (e.entryType === "Purchase"||e.entryType === "Expense") && !e.isRCM).reduce((s,e)=>s+e.cgst+e.sgst+e.igst,0);
     const netGST     = gstOutput - gstInput;
 
-    const income     = periodEntries.filter(e => e.entryType === "Sales" || e.expenseAccount === "direct_income").reduce((s,e)=>s+e.totalBillValue,0);
+    const income     = periodEntries.filter(e => e.entryType === "Sales" || ["sales_subscription","sales_service","sales_renewal","other_income"].includes(e.expenseAccount||"")).reduce((s,e)=>s+e.totalBillValue,0);
     const expenses   = periodEntries.filter(e => ["Purchase","Expense"].includes(e.entryType) || ["direct_expense","indirect_expenses"].includes(e.expenseAccount||"")).reduce((s,e)=>s+e.totalBillValue,0);
     const netProfit  = income - expenses;
 

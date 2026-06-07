@@ -8,7 +8,7 @@ import { useCity } from "../../contexts/CityContext";
 export function GSTOverview() {
   const navigate = useNavigate();
   const { city } = useCity();
-  const [selectedGSTIN, setSelectedGSTIN] = useState("24GAOPS5676E1Z3");
+  const [selectedGSTIN, setSelectedGSTIN] = useState(COMPANY_GST_CONFIG.gstin);
   const [selectedMonth, setSelectedMonth] = useState("April 2026");
 
   const transactions = useMemo(() => gstComplianceService.getTransactions(city), [city]);
@@ -98,7 +98,7 @@ export function GSTOverview() {
               onChange={e => setSelectedGSTIN(e.target.value)}
               className="appearance-none bg-white border border-gray-300 rounded-lg px-4 py-2 pr-10 text-sm"
             >
-              <option>24GAOPS5676E1Z3</option>
+              <option>{COMPANY_GST_CONFIG.gstin}</option>
             </select>
             <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500 pointer-events-none" />
           </div>

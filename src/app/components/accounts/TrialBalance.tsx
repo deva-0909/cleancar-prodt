@@ -32,7 +32,8 @@ export function TrialBalance() {
       if (!city) return []; // guard: city context not loaded yet
 
       const allLedgers = accountingEntryService.getLedgers(city) || [];
-      const allMovements = accountingEntryService.getAllMovements("1900-01-01", asOnDate, city) || [];
+      const asOn = new Date(asOnDate); const fyYear = asOn.getMonth() >= 3 ? asOn.getFullYear() : asOn.getFullYear() - 1; const fyStart = `${fyYear}-04-01`;
+      const allMovements = accountingEntryService.getAllMovements(fyStart, asOnDate, city) || [];
 
       const balances: Record<string, LedgerBalance> = {};
 

@@ -1,7 +1,7 @@
 import { BackButton } from "../ui/back-button";
 import { useState, useMemo } from "react";
 import { FileOutput, Download, CheckCircle, XCircle, AlertTriangle, Copy, Check } from "lucide-react";
-import { gstComplianceService, type GSTTransaction } from "../../services/gstComplianceService";
+import { gstComplianceService, COMPANY_GST_CONFIG, type GSTTransaction } from "../../services/gstComplianceService";
 import { showExportMenu } from "../../utils/gstExportUtils";
 import { useCity } from "../../contexts/CityContext";
 
@@ -9,7 +9,7 @@ export function GSTR1Module() {
   const { city } = useCity();
   const [selectedMonth, setSelectedMonth] = useState(4);
   const [selectedYear, setSelectedYear] = useState(2026);
-  const [selectedGSTIN, setSelectedGSTIN] = useState("24GAOPS5676E1Z3");
+  const [selectedGSTIN, setSelectedGSTIN] = useState(COMPANY_GST_CONFIG.gstin);
   const [status, setStatus] = useState<"Not Generated" | "Generated" | "Filed">("Not Generated");
   const [showGenerated, setShowGenerated] = useState(false);
   const [showJSONPreview, setShowJSONPreview] = useState(false);
