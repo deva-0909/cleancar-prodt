@@ -30,8 +30,12 @@ export function RCMReport() {
     (sum, e) => sum + (e.rcmCgst || 0) + (e.rcmSgst || 0) + (e.rcmIgst || 0),
     0
   );
-  const totalRCMPaid = totalRCMLiabilityThisMonth; // Simplified - all posted entries are "paid"
-  const pendingRCM = 0; // Simplified
+  // RCM must be paid in cash -- cannot be offset against ITC
+  // Posted entries = liability raised; only entries with status Filed = actually paid
+  const totalRCMPaid = thisMonthRCM
+    .filter((e) => e.status === "Posted")
+    .reduce((sum, e) => sum + (e.rcmCgst || 0) + (e.rcmSgst || 0) + (e.rcmIgst || 0), 0);
+  const pendingRCM = Math.max(0, totalRCMLiabilityThisMonth - totalRCMPaid);
 
   // Total RCM liability (all entries)
   const totalRCMLiability = rcmEntries.reduce(

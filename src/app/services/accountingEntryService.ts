@@ -194,7 +194,7 @@ export interface TDSConfig {
 }
 
 export const TDS_RATE_CHART: TDSConfig[] = [
-  { section: "192",  nature: "Salary",                   rateIndividual: 0,   rateCompany: 0,   thresholdAnnual: 250000 },
+  { section: "192",  nature: "Salary (Old Regime -- basic exemption 2.5L; New Regime -- no tax up to 7L per Sec 87A rebate)", rateIndividual: 0, rateCompany: 0, thresholdAnnual: 250000 },
   { section: "194A", nature: "Interest Payment",         rateIndividual: 10,  rateCompany: 10,  thresholdAnnual: 10000 },
   { section: "194C", nature: "Contractor",               rateIndividual: 1,   rateCompany: 2,   thresholdSingle: 30000, thresholdAnnual: 100000 },
   { section: "194I", nature: "Rent (Land/Building)",     rateIndividual: 10,  rateCompany: 10,  thresholdSingle: 50000, thresholdAnnual: 600000 },

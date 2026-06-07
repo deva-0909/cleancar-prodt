@@ -90,6 +90,29 @@ export class PayrollFinanceService {
         `[PAYROLL_PROCESSING] Salary payable created: ${payable.payableId} for ₹${payable.amount}`
       );
 
+      // Step 3b: Post journal entry -- Dr Salary Expense / Cr Salary Payable
+      try {
+        const { accountingEntryService } = await import("./accountingEntryService");
+        const ledgers = accountingEntryService.getLedgers(cityId);
+        const salaryExpLedger = ledgers.find(l => l.accountHead === "indirect_expenses" && l.name.toLowerCase().includes("salary"));
+        const salaryPayLedger = ledgers.find(l => l.accountHead === "accounts_payable" && l.name.toLowerCase().includes("salary"));
+        if (salaryExpLedger && salaryPayLedger) {
+          accountingEntryService.saveJournalEntry({
+            date: new Date().toISOString().split("T")[0],
+            narration: "Salary payable for " + employeeName + " (" + payrollData.month + ")",
+            lines: [
+              { accountHead: salaryExpLedger.id, accountLabel: salaryExpLedger.name, debit: payrollRun.netSalary, credit: 0 },
+              { accountHead: salaryPayLedger.id, accountLabel: salaryPayLedger.name, debit: 0, credit: payrollRun.netSalary },
+            ],
+            city: cityId,
+            cityId,
+            createdBy: "Payroll Engine",
+          });
+        }
+      } catch (e) {
+        console.warn("[PAYROLL] Journal entry skipped -- ledgers not found", e);
+      }
+
       // Step 4: Emit PAYROLL_PROCESSED event
       contexts.emit(
         "PAYROLL_PROCESSED",

@@ -45,6 +45,14 @@ function calculateIndividualTax(income: number): number {
   return 112500 + (income - 1000000) * 0.3;
 }
 
+function calculateCompanyTax(income: number): number {
+  // Domestic company under Section 115BAA — flat 22% + 10% surcharge + 4% cess
+  const baseTax = income * 0.22;
+  const surcharge = baseTax * 0.10;
+  const cess = (baseTax + surcharge) * 0.04;
+  return Math.round(baseTax + surcharge + cess);
+}
+
 function ordinal(n: number): string {
   return n === 1 ? "st" : n === 2 ? "nd" : n === 3 ? "rd" : "th";
 }
